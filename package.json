@@ -1,0 +1,17 @@
+{
+  "name": "shopify-image-swapper",
+  "version": "1.0.0",
+  "description": "Replace an image across many Shopify landing pages at once",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/templates.test.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "multer": "^1.4.5-lts.1"
+  },
+  "engines": { "node": ">=18" }
+}

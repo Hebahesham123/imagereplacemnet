@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Landing Image Swapper</title>
+<style>
+  :root { --bg:#f6f5f2; --card:#fff; --ink:#1d1d1b; --muted:#6f6c66; --line:#e4e1da; --accent:#1f5f4a; --warn:#a15c00; --err:#b3261e; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:18px 24px; border-bottom:1px solid var(--line); background:var(--card); display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:17px; margin:0; }
+  header .sub { color:var(--muted); }
+  main { display:grid; grid-template-columns: 340px 1fr; gap:20px; padding:20px 24px; max-width:1300px; margin:auto; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 12px; }
+  input[type=text], input[type=search] { width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:7px; font:inherit; }
+  .pages { max-height:68vh; overflow:auto; margin-top:10px; }
+  .page { display:flex; gap:10px; padding:8px 6px; border-radius:6px; cursor:pointer; align-items:flex-start; }
+  .page:hover { background:#f1efe9; }
+  .page small { display:block; color:var(--muted); font-size:12px; }
+  .page .warn { color:var(--warn); }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .link { background:none; border:0; color:var(--accent); cursor:pointer; padding:0; font:inherit; }
+  .imgs { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:12px; }
+  .img { border:2px solid var(--line); border-radius:9px; overflow:hidden; cursor:pointer; background:#fafaf8; }
+  .img.sel { border-color:var(--accent); box-shadow:0 0 0 3px #1f5f4a22; }
+  .img img { width:100%; height:120px; object-fit:cover; display:block; background:#eee; }
+  .img div { padding:8px; font-size:12px; word-break:break-all; }
+  .img .n { color:var(--accent); font-weight:600; }
+  .img .slots { color:var(--muted); }
+  .step { margin-top:18px; }
+  button.primary { background:var(--accent); color:#fff; border:0; border-radius:7px; padding:10px 16px; font:inherit; font-weight:600; cursor:pointer; }
+  button.ghost { background:#fff; border:1px solid var(--line); border-radius:7px; padding:10px 16px; font:inherit; cursor:pointer; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .msg { margin-top:14px; padding:12px; border-radius:8px; white-space:pre-wrap; display:none; }
+  .msg.ok { display:block; background:#e8f3ee; color:#14432f; }
+  .msg.err { display:block; background:#fbeaea; color:var(--err); }
+  .msg.info { display:block; background:#f3f1ea; }
+  .empty { color:var(--muted); padding:30px; text-align:center; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  td, th { text-align:left; padding:6px 4px; border-bottom:1px solid var(--line); }
+  .preview-new { max-width:220px; max-height:120px; border-radius:6px; display:none; margin-top:8px; }
+  @media (max-width: 860px) { main { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Landing Image Swapper</h1>
+  <span class="sub">Select pages → pick the image → replace it everywhere at once</span>
+</header>
+
+<main>
+  <section class="card">
+    <h2>1 · Pages</h2>
+    <input type="search" id="q" placeholder="Search pages (e.g. survey)" />
+    <div class="row" style="margin-top:8px">
+      <button class="link" id="selAll">Select visible</button> ·
+      <button class="link" id="selNone">Clear</button>
+      <span class="sub" id="selCount" style="margin-left:auto;color:var(--muted)"></span>
+    </div>
+    <div class="pages" id="pages"><div class="empty">Loading pages…</div></div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>2 · Image to replace</h2>
+      <div id="imgs" class="imgs"><div class="empty">Select one or more pages.</div></div>
+    </div>
+
+    <div class="card step">
+      <h2>3 · New image</h2>
+      <div class="row">
+        <input type="text" id="newUrl" placeholder="Paste image URL (https://…) — or upload below" style="flex:1;min-width:260px" />
+      </div>
+      <div class="row" style="margin-top:10px">
+        <input type="file" id="file" accept="image/*" />
+      </div>
+      <img id="newPrev" class="preview-new" alt="" />
+      <div class="row" style="margin-top:16px">
+        <button class="ghost" id="previewBtn" disabled>Preview changes</button>
+        <button class="primary" id="applyBtn" disabled>Replace in selected pages</button>
+      </div>
+      <div id="msg" class="msg"></div>
+    </div>
+
+    <div class="card step">
+      <h2>History &amp; undo</h2>
+      <div id="history"><div class="empty">No changes yet.</div></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let PAGES = [], selected = new Set(), chosen = null, previewBase = '';
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const thumb = (f) => previewBase + encodeURIComponent(f) + '?width=400';
+
+function msg(text, kind = 'info') { const m = $('#msg'); m.className = 'msg ' + kind; m.textContent = text; }
+
+async function api(url, opts) {
+  const r = await fetch(url, opts); const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText); return j;
+}
+
+async function load() {
+  previewBase = (await api('/api/config')).previewBase;
+  try { PAGES = await api('/api/pages'); renderPages(); }
+  catch (e) { $('#pages').innerHTML = `<div class="empty" style="color:var(--err)">${esc(e.message)}</div>`; }
+  loadHistory();
+}
+
+function visible() {
+  const q = $('#q').value.trim().toLowerCase();
+  return PAGES.filter((p) => !q || p.title.toLowerCase().includes(q) || p.handle.includes(q));
+}
+
+function renderPages() {
+  const list = visible();
+  $('#pages').innerHTML = list.map((p) => `
+    <label class="page">
+      <input type="checkbox" data-h="${esc(p.handle)}" ${selected.has(p.handle) ? 'checked' : ''} />
+      <span><b>${esc(p.title)}</b>
+        <small>/pages/${esc(p.handle)} · ${esc(p.template.replace('templates/', ''))}</small>
+        ${p.missing ? '<small class="warn">Template not found (maybe a .liquid template — not supported)</small>' : ''}
+        ${p.sharedWith.length ? `<small class="warn">Shares template with: ${esc(p.sharedWith.join(', '))}</small>` : ''}
+      </span>
+    </label>`).join('') || '<div class="empty">No pages match.</div>';
+  $('#pages').querySelectorAll('input').forEach((cb) => cb.onchange = () => {
+    cb.checked ? selected.add(cb.dataset.h) : selected.delete(cb.dataset.h); update();
+  });
+  update();
+}
+
+function update() {
+  $('#selCount').textContent = selected.size ? `${selected.size} selected` : '';
+  const pages = PAGES.filter((p) => selected.has(p.handle));
+  const map = new Map();
+  pages.forEach((p) => p.images.forEach((s) => {
+    const e = map.get(s.image) || { image: s.image, pages: new Set(), labels: new Set() };
+    e.pages.add(p.handle); e.labels.add(s.label); map.set(s.image, e);
+  }));
+  const imgs = [...map.values()].sort((a, b) => b.pages.size - a.pages.size);
+  if (chosen && !map.has(chosen)) chosen = null;
+  $('#imgs').innerHTML = !pages.length ? '<div class="empty">Select one or more pages.</div>'
+    : !imgs.length ? '<div class="empty">No image settings found in these pages\' templates.</div>'
+    : imgs.map((i) => `
+      <div class="img ${i.image === chosen ? 'sel' : ''}" data-i="${esc(i.image)}">
+        <img src="${thumb(i.image)}" loading="lazy" alt="" />
+        <div><span class="n">In ${i.pages.size}/${pages.length} pages</span><br>${esc(i.image)}
+          <div class="slots">${esc([...i.labels].join(' · '))}</div></div>
+      </div>`).join('');
+  $('#imgs').querySelectorAll('.img').forEach((el) => el.onclick = () => { chosen = el.dataset.i; update(); });
+  const ready = selected.size && chosen;
+  $('#previewBtn').disabled = !ready;
+  $('#applyBtn').disabled = !(ready && ($('#newUrl').value.trim() || $('#file').files[0]));
+}
+
+function form(dryRun) {
+  const fd = new FormData();
+  fd.append('handles', JSON.stringify([...selected]));
+  fd.append('oldImage', chosen);
+  fd.append('dryRun', String(dryRun));
+  if ($('#file').files[0]) fd.append('file', $('#file').files[0]);
+  else fd.append('newUrl', $('#newUrl').value.trim());
+  return fd;
+}
+
+const planText = (plan) => plan.map((s) => `• ${s.template.replace('templates/', '')}  (${s.count} slot${s.count > 1 ? 's' : ''}) → ${s.pages.join(', ')}`).join('\n');
+
+$('#previewBtn').onclick = async () => {
+  try {
+    const r = await api('/api/apply', { method: 'POST', body: form(true) });
+    const extra = extraPages(r.plan);
+    msg(`These templates will change:\n${planText(r.plan)}` + (extra.length ? `\n\n⚠ Also affected (they share a template): ${extra.join(', ')}` : ''), 'info');
+  } catch (e) { msg(e.message, 'err'); }
+};
+
+function extraPages(plan) {
+  const tpls = new Set(plan.map((s) => s.template));
+  return PAGES.filter((p) => tpls.has(p.template) && !selected.has(p.handle)).map((p) => p.handle);
+}
+
+$('#applyBtn').onclick = async () => {
+  if (!confirm(`Replace "${chosen}" in ${selected.size} page(s)? A backup is saved so you can undo.`)) return;
+  $('#applyBtn').disabled = true; msg('Uploading image to Shopify and updating templates…');
+  try {
+    const r = await api('/api/apply', { method: 'POST', body: form(false) });
+    msg(`Done ✓  New image: ${r.newImage.filename}\n${planText(r.plan)}`, 'ok');
+    $('#newUrl').value = ''; $('#file').value = ''; $('#newPrev').style.display = 'none'; chosen = null;
+    PAGES = await api('/api/pages'); renderPages(); loadHistory();
+  } catch (e) { msg(e.message, 'err'); update(); }
+};
+
+async function loadHistory() {
+  const h = await api('/api/backups').catch(() => []);
+  $('#history').innerHTML = !h.length ? '<div class="empty">No changes yet.</div>' : `<table>
+    <tr><th>When</th><th>Replaced</th><th>With</th><th>Templates</th><th></th></tr>
+    ${h.map((b) => `<tr><td>${esc(b.id.slice(0, 16).replace('T', ' '))}</td><td>${esc(b.oldImage || '')}</td>
+      <td>${esc(b.newImage?.filename || '')}</td><td>${(b.plan || []).length}</td>
+      <td><button class="link" data-r="${esc(b.id)}">Undo</button></td></tr>`).join('')}</table>`;
+  $('#history').querySelectorAll('[data-r]').forEach((b) => b.onclick = async () => {
+    if (!confirm('Restore the templates to how they were before this change?')) return;
+    try { await api('/api/restore/' + b.dataset.r, { method: 'POST' }); msg('Restored ✓', 'ok'); PAGES = await api('/api/pages'); renderPages(); }
+    catch (e) { msg(e.message, 'err'); }
+  });
+}
+
+$('#q').oninput = renderPages;
+$('#selAll').onclick = () => { visible().forEach((p) => selected.add(p.handle)); renderPages(); };
+$('#selNone').onclick = () => { selected.clear(); renderPages(); };
+$('#newUrl').oninput = () => { const v = $('#newUrl').value.trim(); const im = $('#newPrev'); im.src = v; im.style.display = v.startsWith('http') ? 'block' : 'none'; update(); };
+$('#file').onchange = () => { const f = $('#file').files[0]; const im = $('#newPrev'); if (f) { im.src = URL.createObjectURL(f); im.style.display = 'block'; } update(); };
+
+load();
+</script>
+</body>
+</html>
